@@ -340,6 +340,34 @@ async def test_setup_bridge_reads_max_concurrent_from_env(tmp_path: object) -> N
 
 
 @pytest.mark.asyncio
+async def test_setup_bridge_attaches_worktree_manager_when_pre_initialized_to_none(
+    tmp_path: object,
+) -> None:
+    """Regression: WorktreeManager must attach when bot pre-initializes the attr to None.
+
+    ClaudeDiscordBot.__init__ sets ``self.worktree_manager = None`` so the attribute
+    always exists. A ``not hasattr(bot, "worktree_manager")`` gate would silently skip
+    the assignment, leaving the bot without a manager while the log line still claimed
+    it was enabled.
+    """
+    from claude_discord.worktree import WorktreeManager
+
+    bot = _make_bot()
+    bot.worktree_manager = None  # mirror ClaudeDiscordBot.__init__ behaviour
+    runner = _make_runner()
+
+    await setup_bridge(
+        bot,
+        runner,
+        session_db_path=str(tmp_path / "sessions.db"),  # type: ignore[operator]
+        worktree_base_dir=str(tmp_path),  # type: ignore[arg-type]
+        enable_scheduler=False,
+    )
+
+    assert isinstance(bot.worktree_manager, WorktreeManager)
+
+
+@pytest.mark.asyncio
 async def test_setup_bridge_defaults_max_concurrent_to_3(tmp_path: object) -> None:
     """Without env var or parameter, max_concurrent defaults to 3."""
     from unittest.mock import patch

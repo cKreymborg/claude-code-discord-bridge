@@ -227,7 +227,7 @@ async def setup_bridge(
     if worktree_base_dir is None:
         worktree_base_dir = os.getenv("WORKTREE_BASE_DIR")
     if worktree_base_dir is not None:
-        if not hasattr(bot, "worktree_manager"):
+        if getattr(bot, "worktree_manager", None) is None:
             bot.worktree_manager = WorktreeManager(base_dir=worktree_base_dir)  # type: ignore[attr-defined]
         logger.info("WorktreeManager enabled (base_dir=%s)", worktree_base_dir)
 
