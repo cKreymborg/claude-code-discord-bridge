@@ -206,6 +206,72 @@ class TestParserAskUserQuestion:
         assert questions[0].question == "Q1?"
         assert questions[1].question == "Q2?"
 
+    # --- regression: malformed / JSON-encoded payloads must not crash ---
+    # Some Claude Code or model versions deliver `questions` (or its elements,
+    # or `options`) as a JSON-encoded string. Previously this raised
+    # `AttributeError: 'str' object has no attribute 'get'`, killing the session.
+
+    def test_questions_as_json_string_is_decoded(self) -> None:
+        tool_input = {
+            "questions": json.dumps(
+                [{"question": "Q?", "header": "H", "options": [{"label": "A"}]}]
+            )
+        }
+        questions = _parse_ask_questions(tool_input)
+        assert len(questions) == 1
+        assert questions[0].question == "Q?"
+        assert questions[0].header == "H"
+        assert questions[0].options[0].label == "A"
+
+    def test_question_element_as_json_string_is_decoded(self) -> None:
+        tool_input = {"questions": [json.dumps({"question": "Q?", "options": [{"label": "A"}]})]}
+        questions = _parse_ask_questions(tool_input)
+        assert len(questions) == 1
+        assert questions[0].question == "Q?"
+        assert questions[0].options[0].label == "A"
+
+    def test_options_as_json_string_is_decoded(self) -> None:
+        opts = json.dumps([{"label": "A"}, {"label": "B"}])
+        tool_input = {"questions": [{"question": "Q?", "options": opts}]}
+        questions = _parse_ask_questions(tool_input)
+        assert len(questions[0].options) == 2
+
+    def test_non_dict_questions_are_skipped(self) -> None:
+        tool_input = {"questions": ["just a string", 42, None, {"question": "Real?"}]}
+        questions = _parse_ask_questions(tool_input)
+        assert len(questions) == 1
+        assert questions[0].question == "Real?"
+
+    def test_non_json_string_questions_returns_empty(self) -> None:
+        # Must not raise AttributeError; just yields nothing.
+        assert _parse_ask_questions({"questions": "totally not json"}) == []
+
+    def test_parse_line_with_string_questions_does_not_raise(self) -> None:
+        # End-to-end through parse_line — the exact path that crashed the session.
+        line = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tool-ask",
+                            "name": "AskUserQuestion",
+                            "input": {
+                                "questions": json.dumps(
+                                    [{"question": "Pick?", "options": [{"label": "Red"}]}]
+                                )
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+        event = parse_line(line)
+        assert event is not None
+        assert event.ask_questions[0].question == "Pick?"
+        assert event.ask_questions[0].options[0].label == "Red"
+
 
 # ---------------------------------------------------------------------------
 # embeds

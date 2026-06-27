@@ -310,17 +310,44 @@ def _parse_rate_limit_event(data: dict[str, Any], event: StreamEvent) -> None:
 
 
 def _parse_ask_questions(tool_input: dict[str, Any]) -> list[AskQuestion]:
-    """Parse AskUserQuestion tool input into a list of AskQuestion objects."""
-    questions_raw = tool_input.get("questions", [])
+    """Parse AskUserQuestion tool input into a list of AskQuestion objects.
+
+    Defensive against malformed/streamed payloads: some Claude Code or model
+    versions deliver ``questions`` (or its elements, or ``options``) as a
+    JSON-encoded string instead of a parsed list. Iterating a string yields
+    characters, so ``q.get(...)`` would then raise
+    ``AttributeError: 'str' object has no attribute 'get'`` and crash the whole
+    session. Normalise to lists/dicts first, then skip anything still malformed.
+    """
+
+    def _as_list(value: Any) -> list[Any]:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (ValueError, TypeError):
+                return []
+        return value if isinstance(value, list) else []
+
+    def _as_dict(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (ValueError, TypeError):
+                return None
+        return value if isinstance(value, dict) else None
+
     result: list[AskQuestion] = []
-    for q in questions_raw:
+    for raw_q in _as_list(tool_input.get("questions", [])):
+        q = _as_dict(raw_q)
+        if q is None:
+            continue
         options = [
             AskOption(
                 label=o.get("label", ""),
                 description=o.get("description", ""),
             )
-            for o in q.get("options", [])
-            if o.get("label")
+            for o in (_as_dict(opt) for opt in _as_list(q.get("options", [])))
+            if o is not None and o.get("label")
         ]
         result.append(
             AskQuestion(
