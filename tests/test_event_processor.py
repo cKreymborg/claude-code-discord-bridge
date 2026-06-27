@@ -27,6 +27,7 @@ from claude_discord.claude.types import (
 )
 from claude_discord.cogs.event_processor import EventProcessor
 from claude_discord.cogs.run_config import RunConfig
+from claude_discord.display_config import DisplayConfig
 
 
 def _make_config(thread: MagicMock, runner: MagicMock, **kwargs) -> RunConfig:
@@ -1523,3 +1524,110 @@ class TestUserActionMentions:
 
         thread.send.assert_called_once()
         assert thread.send.call_args.kwargs["content"] == "<@42>"
+
+
+class TestDisplayConfigToggles:
+    """Per-element display toggles via RunConfig.display."""
+
+    def _todo_event(self) -> StreamEvent:
+        return StreamEvent(
+            message_type=MessageType.ASSISTANT,
+            todo_list=[TodoItem(content="Task 1", status="in_progress", active_form="Doing")],
+        )
+
+    @pytest.mark.asyncio
+    async def test_tool_use_hidden_posts_no_embed_but_tracks(
+        self, thread: MagicMock, runner: MagicMock
+    ) -> None:
+        config = _make_config(thread, runner, display=DisplayConfig(show_tool_use=False))
+        p = EventProcessor(config)
+
+        await p.process(_make_tool_event("t1"))
+
+        embed_sends = [c for c in thread.send.call_args_list if "embed" in c.kwargs]
+        assert embed_sends == []
+        # Work still tracked even though the embed is suppressed.
+        assert p._state.tool_use_count == 1
+        assert "t1" not in p._state.active_tools
+
+    @pytest.mark.asyncio
+    async def test_tool_use_shown_by_default(self, thread: MagicMock, runner: MagicMock) -> None:
+        config = _make_config(thread, runner)  # default display = all visible
+        p = EventProcessor(config)
+
+        await p.process(_make_tool_event("t1"))
+
+        embed_sends = [c for c in thread.send.call_args_list if "embed" in c.kwargs]
+        assert len(embed_sends) == 1
+
+    @pytest.mark.asyncio
+    async def test_thinking_hidden_posts_no_embed(
+        self, thread: MagicMock, runner: MagicMock
+    ) -> None:
+        config = _make_config(thread, runner, display=DisplayConfig(show_thinking=False))
+        p = EventProcessor(config)
+
+        await p.process(
+            StreamEvent(
+                message_type=MessageType.ASSISTANT,
+                thinking="secret reasoning",
+                is_partial=False,
+            )
+        )
+
+        thread.send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_todos_hidden_posts_no_embed(self, thread: MagicMock, runner: MagicMock) -> None:
+        config = _make_config(thread, runner, display=DisplayConfig(show_todos=False))
+        p = EventProcessor(config)
+
+        await p.process(self._todo_event())
+
+        embed_sends = [c for c in thread.send.call_args_list if "embed" in c.kwargs]
+        assert embed_sends == []
+
+    @pytest.mark.asyncio
+    async def test_session_start_hidden_posts_no_embed(
+        self, thread: MagicMock, runner: MagicMock
+    ) -> None:
+        config = _make_config(thread, runner, display=DisplayConfig(show_session_start=False))
+        p = EventProcessor(config)
+
+        await p.process(StreamEvent(message_type=MessageType.SYSTEM, session_id="s1"))
+
+        embed_sends = [c for c in thread.send.call_args_list if "embed" in c.kwargs]
+        assert embed_sends == []
+
+    @pytest.mark.asyncio
+    async def test_hiding_tool_use_leaves_thinking_visible(
+        self, thread: MagicMock, runner: MagicMock
+    ) -> None:
+        config = _make_config(thread, runner, display=DisplayConfig(show_tool_use=False))
+        p = EventProcessor(config)
+
+        await p.process(
+            StreamEvent(
+                message_type=MessageType.ASSISTANT,
+                thinking="still thinking",
+                is_partial=False,
+            )
+        )
+
+        embed_sends = [c for c in thread.send.call_args_list if "embed" in c.kwargs]
+        assert len(embed_sends) == 1
+
+    @pytest.mark.asyncio
+    async def test_chat_only_overrides_display_and_hides_tool_use(
+        self, thread: MagicMock, runner: MagicMock
+    ) -> None:
+        # chat_only is the master switch: even with an all-visible display, the
+        # tool embed must be suppressed.
+        config = _make_config(thread, runner, chat_only=True, display=DisplayConfig.all_visible())
+        p = EventProcessor(config)
+
+        await p.process(_make_tool_event("t1"))
+
+        embed_sends = [c for c in thread.send.call_args_list if "embed" in c.kwargs]
+        assert embed_sends == []
+        assert p._state.tool_use_count == 1

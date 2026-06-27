@@ -9,7 +9,7 @@ added without changing every caller).
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import discord
@@ -22,6 +22,7 @@ from ..database.ask_repo import PendingAskRepository
 from ..database.lounge_repo import LoungeRepository
 from ..database.repository import SessionRepository
 from ..discord_ui.status import StatusManager
+from ..display_config import DisplayConfig
 
 if TYPE_CHECKING:
     from ..backend_settings import BackendSettings
@@ -88,6 +89,11 @@ class RunConfig:
     # blocks, session start/complete embeds, and other technical details are hidden.
     # Useful for public channels where non-technical users are watching.
     chat_only: bool = False
+    # Per-element display toggles (thinking, tool-use, todos, session-start,
+    # compaction). Defaults to DisplayConfig.from_env() so HIDE_* env vars apply
+    # globally with zero wiring. chat_only still acts as a master switch that
+    # hides everything; the final answer and interactive prompts always show.
+    display: DisplayConfig = field(default_factory=DisplayConfig.from_env)
     # Discord user to mention when Claude pauses for an explicit button/form action.
     notify_user_id: int | None = None
     # Optional callback invoked once when the session reaches its terminal state,

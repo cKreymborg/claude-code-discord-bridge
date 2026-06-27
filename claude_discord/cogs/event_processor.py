@@ -37,6 +37,7 @@ from ..discord_ui.permission_view import PermissionView
 from ..discord_ui.plan_view import PlanApprovalView
 from ..discord_ui.streaming_manager import StreamingMessageManager
 from ..discord_ui.tool_timer import LiveToolTimer
+from ..display_config import DisplayConfig
 from .run_config import RunConfig
 
 logger = logging.getLogger(__name__)
@@ -266,13 +267,24 @@ class EventProcessor:
         """Shorthand for the chat_only flag on the config."""
         return self._config.chat_only
 
+    @property
+    def _display(self) -> DisplayConfig:
+        """Effective per-element display config.
+
+        The chat_only flag is a master switch: when set it forces every
+        informational element off, regardless of the granular display config.
+        """
+        if self._config.chat_only:
+            return DisplayConfig.all_hidden()
+        return self._config.display
+
     async def _on_system(self, event: StreamEvent) -> None:
         """Handle SYSTEM events — capture session_id, post start embed, compact notification."""
         # Context compaction notification (skip display in chat_only mode)
         if event.is_compact:
             if self._config.status:
                 await self._config.status.set_compact()
-            if not self._chat_only:
+            if self._display.show_compaction:
                 pre = event.compact_pre_tokens
                 trigger = event.compact_trigger or "auto"
                 label = f"\U0001f5dc\ufe0f Context compacted ({trigger})"
@@ -325,8 +337,12 @@ class EventProcessor:
                 )
 
         # Guard: post session_start_embed only once (Claude can emit multiple SYSTEM events).
-        # Skip in chat_only mode — no session start embed.
-        if not self._chat_only and not self._config.session_id and not self._session_start_sent:
+        # Skip when the session-start embed is disabled (or chat_only).
+        if (
+            self._display.show_session_start
+            and not self._config.session_id
+            and not self._session_start_sent
+        ):
             await self._config.thread.send(
                 embed=session_start_embed(
                     self._state.session_id,
@@ -339,12 +355,12 @@ class EventProcessor:
     async def _on_assistant(self, event: StreamEvent) -> None:
         """Handle ASSISTANT events — thinking, streaming text, tool use."""
         # Extended thinking — only post on complete events (not partials).
-        # Skip in chat_only mode.
-        if event.thinking and not event.is_partial and not self._chat_only:
+        # Skip when thinking display is disabled (or chat_only).
+        if event.thinking and not event.is_partial and self._display.show_thinking:
             await self._config.thread.send(embed=thinking_embed(event.thinking))
 
-        # Redacted thinking — only post on complete events. Skip in chat_only mode.
-        if event.has_redacted_thinking and not event.is_partial and not self._chat_only:
+        # Redacted thinking — only post on complete events. Skip when thinking is off.
+        if event.has_redacted_thinking and not event.is_partial and self._display.show_thinking:
             await self._config.thread.send(embed=redacted_thinking_embed())
 
         # Text streaming — compute delta from last partial, edit in place.
@@ -357,9 +373,9 @@ class EventProcessor:
         if event.tool_use and event.tool_use.tool_name == "ScheduleWakeup":
             self._pending_wakeup = dict(event.tool_use.tool_input)
 
-        # Tool use — post embed and start live timer. Skip in chat_only mode.
+        # Tool use — post embed and start live timer. Skip when tool-use display is off.
         if event.tool_use:
-            if self._chat_only:
+            if not self._display.show_tool_use:
                 # Still track tool use count and update status, but don't post embeds.
                 self._state.tool_use_count += 1
                 if self._config.status:
@@ -367,8 +383,8 @@ class EventProcessor:
             else:
                 await self._handle_tool_use(event)
 
-        # TodoWrite — post or edit the live todo progress embed. Skip in chat_only mode.
-        if event.todo_list is not None and not self._chat_only:
+        # TodoWrite — post or edit the live todo progress embed. Skip when todos are off.
+        if event.todo_list is not None and self._display.show_todos:
             await self._handle_todo_write(event)
 
         # ExitPlanMode — show plan embed with Approve/Cancel buttons.
@@ -394,8 +410,8 @@ class EventProcessor:
         if not event.tool_result_id:
             return
 
-        # In chat_only mode, no tool embeds were posted — just reset status.
-        if self._chat_only:
+        # When tool-use embeds are hidden, none were posted — just reset status.
+        if not self._display.show_tool_use:
             if self._config.status:
                 await self._config.status.set_thinking()
             return
