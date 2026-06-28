@@ -58,6 +58,26 @@ class TestBuildArgs:
         assert "--allowedTools" in args
         assert "Bash,Read" in args
 
+    def test_lounge_allow_rule_added_when_api_port_set(self) -> None:
+        runner = ClaudeRunner(api_port=8765)
+        args = runner._build_args("hello", session_id=None)
+        assert "--allowedTools" in args
+        rules = args[args.index("--allowedTools") + 1]
+        assert 'Bash(curl -s -X POST "$CCDB_API_URL/api/lounge":*)' in rules
+
+    def test_no_lounge_allow_rule_without_api_port(self) -> None:
+        runner = ClaudeRunner()  # no api_port → lounge endpoint does not exist
+        args = runner._build_args("hello", session_id=None)
+        assert "--allowedTools" not in args
+
+    def test_lounge_rule_combines_with_configured_allowed_tools(self) -> None:
+        runner = ClaudeRunner(allowed_tools=["Bash", "Read"], api_port=8765)
+        args = runner._build_args("hello", session_id=None)
+        rules = args[args.index("--allowedTools") + 1]
+        assert "Bash" in rules
+        assert "Read" in rules
+        assert 'Bash(curl -s -X POST "$CCDB_API_URL/api/lounge":*)' in rules
+
     def test_dangerously_skip_permissions(self) -> None:
         runner = ClaudeRunner(dangerously_skip_permissions=True)
         args = runner._build_args("hello", session_id=None)

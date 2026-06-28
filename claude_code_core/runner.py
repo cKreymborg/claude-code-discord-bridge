@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 # Sentinel to distinguish "not provided" from None (which means "no tool restrictions").
 _UNSET = object()
 
+# Permission allow-rule for the AI Lounge POST. The lounge is ccdb's own
+# first-party localhost endpoint (CCDB_API_URL), so the permission classifier
+# (notably permission_mode="auto") must never gate it — otherwise lounge writes
+# get intermittently blocked behind an Allow/Deny prompt. This is scoped to the
+# exact curl from claude_discord/lounge.py so nothing else is widened, and it is
+# only added when api_port is set (i.e. when CCDB_API_URL actually exists).
+_LOUNGE_ALLOW_RULE = 'Bash(curl -s -X POST "$CCDB_API_URL/api/lounge":*)'
+
 
 def _resolve_windows_cmd(cmd_path: Path) -> list[str] | None:
     """Resolve a Windows npm .cmd/.bat wrapper to ``[node, cli_js]``.
@@ -301,8 +309,13 @@ class ClaudeRunner:
         ):
             args.append("--dangerously-skip-permissions")
 
-        if self.allowed_tools:
-            args.extend(["--allowedTools", ",".join(self.allowed_tools)])
+        # Combine any configured allow-rules with the always-on lounge rule
+        # (added only when the lounge endpoint exists, i.e. api_port is set).
+        effective_allowed_tools = list(self.allowed_tools or [])
+        if self.api_port is not None:
+            effective_allowed_tools.append(_LOUNGE_ALLOW_RULE)
+        if effective_allowed_tools:
+            args.extend(["--allowedTools", ",".join(effective_allowed_tools)])
 
         if session_id:
             if not re.match(r"^[a-f0-9\-]+$", session_id):
