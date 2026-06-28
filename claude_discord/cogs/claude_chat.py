@@ -73,6 +73,8 @@ _HELP_CATEGORY: dict[str, str | None] = {
     "resume-info": "📌 Session",
     "sync-sessions": "📌 Session",
     "sync-settings": "📌 Session",
+    "cd": "📌 Session",
+    "cdnew": "📌 Session",
     "model": "🤖 Model",
     "backend": "🤖 Model",
     "engine-status": "🤖 Model",

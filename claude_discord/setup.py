@@ -323,6 +323,19 @@ async def setup_bridge(
         await bot.add_cog(skill_cog)
         logger.info("Registered SkillCommandCog")
 
+        # --- WorkdirCommandCog (/cd, /cdnew — pick a working dir via autocomplete) ---
+        from .cogs.workdir_command import WorkdirCommandCog
+
+        workdir_cog = WorkdirCommandCog(
+            bot,
+            repo=session_repo,
+            claude_channel_id=_primary_channel_id,
+            claude_channel_ids=_all_channel_ids,
+            allowed_user_ids=allowed_user_ids,
+        )
+        await bot.add_cog(workdir_cog)
+        logger.info("Registered WorkdirCommandCog")
+
     # --- SchedulerCog (optional) ---
     task_repo: TaskRepository | None = None
     if enable_scheduler:
