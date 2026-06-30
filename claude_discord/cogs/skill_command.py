@@ -263,7 +263,15 @@ class SkillCommandCog(commands.Cog):
             display = f"`/{name} {args}`" if args else f"`/{name}`"
             await interaction.followup.send(f"Running {display} in this thread…")
 
-            runner = self.runner.clone(thread_id=channel.id)
+            # Honour the thread's working dir (e.g. set via /cd or /cdnew) so the
+            # skill runs — and its session is created — in the same directory the
+            # thread's follow-up messages will use. Otherwise the skill runs in
+            # the default dir, the next reply runs in the thread's dir, and the
+            # session can't be resumed across the two (context is lost).
+            clone_kwargs: dict[str, object] = {"thread_id": channel.id}
+            if record and record.working_dir:
+                clone_kwargs["working_dir"] = record.working_dir
+            runner = self.runner.clone(**clone_kwargs)
             await run_claude_with_config(
                 RunConfig(
                     thread=channel,
