@@ -646,7 +646,9 @@ class TestOnReady:
         bot = MagicMock()
         bot.get_channel.return_value = thread
 
-        cog = ClaudeChatCog(bot=bot, repo=MagicMock(), runner=MagicMock(), resume_repo=resume_repo)
+        repo = MagicMock()
+        repo.get = AsyncMock(return_value=None)
+        cog = ClaudeChatCog(bot=bot, repo=repo, runner=MagicMock(), resume_repo=resume_repo)
 
         call_order: list[str] = []
         resume_repo.delete.side_effect = lambda _: call_order.append("delete")
@@ -869,7 +871,9 @@ class TestOnReadyFallbackResumePrompt:
         bot = MagicMock()
         bot.get_channel.return_value = thread
 
-        cog = ClaudeChatCog(bot=bot, repo=MagicMock(), runner=MagicMock(), resume_repo=resume_repo)
+        repo = MagicMock()
+        repo.get = AsyncMock(return_value=None)
+        cog = ClaudeChatCog(bot=bot, repo=repo, runner=MagicMock(), resume_repo=resume_repo)
 
         with patch.object(cog, "_run_claude", new=AsyncMock()):
             await cog.on_ready()

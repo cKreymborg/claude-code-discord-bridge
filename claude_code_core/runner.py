@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .api_provider import detect_api_provider
 from .parser import parse_line
+from .rewind import session_exists_in_cwd
 from .types import ImageData, MessageType, StreamEvent
 
 # Re-export for backward compatibility
@@ -115,6 +116,28 @@ class ClaudeRunner:
         self.effort = effort
         self._process: asyncio.subprocess.Process | None = None
 
+    def _resumable_session_id(self, session_id: str | None, cwd: str) -> str | None:
+        """Return ``session_id`` only if it's resumable from ``cwd``, else None.
+
+        Claude Code stores each transcript under the project dir of the
+        directory it was created in, and ``--resume`` only looks there. If the
+        thread's working dir has since changed (e.g. via /cd, an auto-resume
+        after restart, or a spawn in the default dir), resuming a session whose
+        transcript lives elsewhere makes the CLI exit instantly with
+        ``error_during_execution`` ("No conversation found") and zero output.
+        In that case we drop the id so the caller starts a fresh session.
+        """
+        if session_id and not session_exists_in_cwd(session_id, cwd):
+            logger.warning(
+                "Session %s has no transcript under cwd=%s; starting a fresh "
+                "session instead of resuming (avoids instant "
+                "error_during_execution).",
+                session_id,
+                cwd,
+            )
+            return None
+        return session_id
+
     async def run(
         self,
         prompt: str,
@@ -132,9 +155,11 @@ class ClaudeRunner:
         Yields:
             StreamEvent objects parsed from stream-json output.
         """
+        cwd = self.working_dir or os.getcwd()
+        session_id = self._resumable_session_id(session_id, cwd)
+
         args = self._build_args(prompt, session_id)
         env = self._build_env()
-        cwd = self.working_dir or os.getcwd()
 
         logger.info(
             "Starting Claude CLI: %s (cwd=%s, pid will follow)",

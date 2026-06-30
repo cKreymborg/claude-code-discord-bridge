@@ -1063,3 +1063,31 @@ class TestResolveWindowsCmd:
             args = runner._build_args("hello", session_id=None)
 
         assert args[0] == str(cmd_path)
+
+
+class TestResumableSessionId:
+    """The resume guard that prevents instant error_during_execution when a
+    session is resumed from a directory it wasn't created in."""
+
+    def test_keeps_session_id_when_transcript_present(self) -> None:
+        runner = ClaudeRunner(command="claude", model="sonnet")
+        with patch("claude_code_core.runner.session_exists_in_cwd", return_value=True) as check:
+            result = runner._resumable_session_id("abc123", "/work/dir")
+        assert result == "abc123"
+        check.assert_called_once_with("abc123", "/work/dir")
+
+    def test_drops_session_id_when_transcript_absent(self) -> None:
+        """A session whose transcript isn't under cwd must be dropped so the
+        run starts fresh instead of dying with `No conversation found`."""
+        runner = ClaudeRunner(command="claude", model="sonnet")
+        with patch("claude_code_core.runner.session_exists_in_cwd", return_value=False):
+            result = runner._resumable_session_id("abc123", "/different/dir")
+        assert result is None
+
+    def test_none_session_id_is_passed_through(self) -> None:
+        runner = ClaudeRunner(command="claude", model="sonnet")
+        # No transcript lookup needed when there's nothing to resume.
+        with patch("claude_code_core.runner.session_exists_in_cwd", return_value=False) as check:
+            result = runner._resumable_session_id(None, "/work/dir")
+        assert result is None
+        check.assert_not_called()

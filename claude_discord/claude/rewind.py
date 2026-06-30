@@ -13,6 +13,7 @@ from claude_code_core.rewind import (
     _extract_text,
     find_session_jsonl,
     parse_user_turns,
+    session_exists_in_cwd,
     truncate_jsonl_at_line,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "_extract_text",
     "find_session_jsonl",
     "parse_user_turns",
+    "session_exists_in_cwd",
     "truncate_jsonl_at_line",
 ]

@@ -914,6 +914,10 @@ class ClaudeChatCog(commands.Cog):
                 entry.session_id,
                 entry.reason,
             )
+            # Resume in the session's recorded working dir so `--resume`
+            # resolves the transcript (sessions are bound to the dir they were
+            # created in); otherwise the runner would start a fresh session.
+            record = await self.repo.get(thread_id)
             try:
                 # Post directly into the existing thread — no new thread needed
                 seed_message = await thread.send(f"🔄 **Bot restarted.**\n{resume_prompt}")
@@ -923,6 +927,7 @@ class ClaudeChatCog(commands.Cog):
                         thread,
                         resume_prompt,
                         session_id=entry.session_id,
+                        working_dir_override=record.working_dir if record else None,
                     )
                 )
             except Exception:

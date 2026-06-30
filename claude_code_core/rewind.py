@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,6 +66,23 @@ def find_session_jsonl(session_id: str, working_dir: str | None) -> Path | None:
         return jsonl
 
     return None
+
+
+def session_exists_in_cwd(session_id: str, working_dir: str | None) -> bool:
+    """Return True if ``session_id``'s transcript lives under the project dir
+    derived from ``working_dir``.
+
+    Unlike :func:`find_session_jsonl`, this performs NO cross-directory glob
+    fallback. Claude Code's ``--resume`` resolves a session *only* against the
+    current working directory's project dir, so a transcript stored under a
+    different directory is not resumable from here — attempting it makes the
+    CLI exit instantly with ``error_during_execution`` ("No conversation
+    found with session ID"). Callers use this to decide whether to ``--resume``
+    or start a fresh session.
+    """
+    base = working_dir or os.getcwd()
+    candidate = _CLAUDE_PROJECTS_DIR / _cwd_to_project_dir(base) / f"{session_id}.jsonl"
+    return candidate.exists()
 
 
 def parse_user_turns(jsonl_path: Path, *, max_turns: int = 25) -> list[TurnEntry]:
