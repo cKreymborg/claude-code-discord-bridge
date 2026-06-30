@@ -10,6 +10,7 @@ from claude_discord.claude.rewind import (
     _extract_text,
     find_session_jsonl,
     parse_user_turns,
+    session_exists_in_cwd,
     truncate_jsonl_at_line,
 )
 
@@ -311,3 +312,53 @@ def test_find_session_jsonl_returns_none_when_not_found(tmp_path: Path, monkeypa
 
     result = find_session_jsonl("no-such-session", "/some/dir")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# session_exists_in_cwd
+# ---------------------------------------------------------------------------
+
+
+def test_session_exists_in_cwd_true_when_under_dir(tmp_path: Path, monkeypatch) -> None:
+    import claude_code_core.rewind as core_rewind_mod
+
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    monkeypatch.setattr(core_rewind_mod, "_CLAUDE_PROJECTS_DIR", projects_dir)
+
+    project_dir = projects_dir / "-home-ebi-myrepo"
+    project_dir.mkdir()
+    session_id = "abc123"
+    (project_dir / f"{session_id}.jsonl").write_text("")
+
+    assert session_exists_in_cwd(session_id, "/home/ebi/myrepo") is True
+
+
+def test_session_exists_in_cwd_false_when_session_lives_elsewhere(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The whole point of the resume guard: a transcript stored under a
+    *different* dir is NOT resumable here, so this must return False even
+    though find_session_jsonl's glob fallback would locate it."""
+    import claude_code_core.rewind as core_rewind_mod
+
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    monkeypatch.setattr(core_rewind_mod, "_CLAUDE_PROJECTS_DIR", projects_dir)
+
+    other_dir = projects_dir / "-some-other-dir"
+    other_dir.mkdir()
+    session_id = "xyz789"
+    (other_dir / f"{session_id}.jsonl").write_text("")
+
+    # Session exists somewhere (glob would find it) but not under this cwd.
+    assert find_session_jsonl(session_id, "/home/ebi/myrepo") is not None
+    assert session_exists_in_cwd(session_id, "/home/ebi/myrepo") is False
+
+
+def test_session_exists_in_cwd_false_when_missing(tmp_path: Path, monkeypatch) -> None:
+    import claude_code_core.rewind as core_rewind_mod
+
+    monkeypatch.setattr(core_rewind_mod, "_CLAUDE_PROJECTS_DIR", tmp_path / "empty")
+
+    assert session_exists_in_cwd("no-such-session", "/some/dir") is False
