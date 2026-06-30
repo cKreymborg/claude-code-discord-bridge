@@ -441,6 +441,49 @@ class TestInThreadMode:
             assert call_kwargs.thread is thread
 
     @pytest.mark.asyncio
+    async def test_clone_uses_thread_working_dir(self) -> None:
+        """In-thread mode must clone the runner with the thread's working_dir so
+        the skill's session is created in the same dir the thread's replies use
+        (otherwise context is lost between the skill and the follow-up)."""
+        cog = _make_cog(skills=[{"name": "recall", "description": ""}])
+        thread = _make_thread(thread_id=5555, parent_id=999)
+        interaction = _make_interaction(channel=thread)
+
+        record = MagicMock()
+        record.session_id = ""
+        record.working_dir = "/Users/me/Developer/quiet-ink"
+        cog.repo.get = AsyncMock(return_value=record)
+
+        with patch(
+            "claude_discord.cogs.skill_command.run_claude_with_config", new_callable=AsyncMock
+        ):
+            await cog.run_skill.callback(cog, interaction, name="recall", args=None)
+
+        cog.runner.clone.assert_called_once_with(
+            thread_id=5555, working_dir="/Users/me/Developer/quiet-ink"
+        )
+
+    @pytest.mark.asyncio
+    async def test_clone_omits_working_dir_when_unset(self) -> None:
+        """When the thread record has no working_dir, clone is called without it
+        (the runner inherits its default dir)."""
+        cog = _make_cog(skills=[{"name": "recall", "description": ""}])
+        thread = _make_thread(thread_id=5555, parent_id=999)
+        interaction = _make_interaction(channel=thread)
+
+        record = MagicMock()
+        record.session_id = "abc-123"
+        record.working_dir = None
+        cog.repo.get = AsyncMock(return_value=record)
+
+        with patch(
+            "claude_discord.cogs.skill_command.run_claude_with_config", new_callable=AsyncMock
+        ):
+            await cog.run_skill.callback(cog, interaction, name="recall", args=None)
+
+        cog.runner.clone.assert_called_once_with(thread_id=5555)
+
+    @pytest.mark.asyncio
     async def test_no_session_in_thread(self) -> None:
         """In-thread mode with no existing session passes session_id=None."""
         cog = _make_cog(skills=[{"name": "recall", "description": ""}])
